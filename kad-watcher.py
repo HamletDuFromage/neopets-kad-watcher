@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 
-import asyncio
 from datetime import datetime, timedelta
 from json import JSONDecodeError
 import json
-from pyexpat.errors import messages
+import logging
 from pytz import timezone
 import argparse
 import re
@@ -24,6 +23,8 @@ from discord.ext import commands, tasks
 
 COMBINATION = {keyboard.Key.ctrl, keyboard.Key.esc}
 
+handler = logging.FileHandler(filename='kad-discord.log', encoding='utf-8', mode='w')
+discord.utils.setup_logging(level=logging.INFO, root=False)
 
 class Flag:
     OK = 0
@@ -40,6 +41,7 @@ class KadWatcher(commands.Bot):
         self.kad_url = "https://www.neopets.com/games/kadoatery/index.phtml"
         self.scraper = cloudscraper.create_scraper(browser='chrome')
 
+        self.browser = self.create_browser()
         self.login_attempts = 0
         self.current_kad = 0
         self.count = 0
@@ -48,10 +50,10 @@ class KadWatcher(commands.Bot):
         self.current = set()
         keyboard.Listener(on_press=self.on_press, on_release=self.on_release).start()
         self.add_command(self.set_status)
+        self.logger = logging.getLogger("discord")
 
     @commands.command()
     async def set_status(self, ctx, status='stop'):
-        print('ayo')
         if status == 'quit':
             self.bot_status = Flag.QUIT
         elif status == 'stop':
@@ -68,7 +70,7 @@ class KadWatcher(commands.Bot):
         if key in COMBINATION:
             self.current.add(key)
         if all(k in self.current for k in COMBINATION):
-            print("Pulling the brakes!")
+            self.logger.critical("Pulling the brakes!")
             self.bot_status = Flag.QUIT
 
     def on_release(self, key):
@@ -98,20 +100,19 @@ class KadWatcher(commands.Bot):
         self.check_for_refresh_bot.start()
 
     async def on_ready(self):
-        print(f'Logged in as {self.user} (ID: {self.user.id})')
+        self.logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
 
     def login_selenium(self, usr, pwd):
-        print(f"Logging in neopets")
-        browser = self.create_browser()
-        browser.delete_all_cookies()
-        browser.get("https://www.neopets.com/login/")
-        time.sleep(10)
+        self.logger.info(f"Logging in neopets")
+        self.browser.delete_all_cookies()
+        self.browser.get("https://www.neopets.com/login/")
         try:
-            browser.find_element(by=By.ID, value="loginUsername").send_keys(usr)
-            browser.find_element(by=By.ID, value="loginPassword").send_keys(pwd)
-            browser.find_element(by=By.ID, value="loginButton").click()
+            WebDriverWait(self.browser, 20).until(EC.presence_of_element_located((By.ID, "loginUsername")))
+            self.browser.find_element(by=By.ID, value="loginUsername").send_keys(usr)
+            self.browser.find_element(by=By.ID, value="loginPassword").send_keys(pwd)
+            self.browser.find_element(by=By.ID, value="loginButton").click()
         except NoSuchElementException as ex:
-            print(f"Couldn't connect to neopets.com {type(ex).__name__}, try {self.login_attempts}")
+            self.logger.error(f"Couldn't connect to neopets.com {type(ex).__name__}, try {self.login_attempts}")
             self.login_attempts += 1
             if self.login_attempts < 10:
                 return self.login_selenium(usr, pwd)
@@ -119,23 +120,22 @@ class KadWatcher(commands.Bot):
                 self.bot_status = Flag.QUIT
                 return False
         try:
-            WebDriverWait(browser, 20).until(EC.title_is("Welcome to Neopets!"))
+            WebDriverWait(self.browser, 20).until(EC.title_is("Welcome to Neopets!"))
         except TimeoutException as ex:
-            print(f"Couldn't connect to neopets.com after {self.login_attempts} attempts")
+            self.logger.error(f"Couldn't connect to neopets.com after {self.login_attempts} attempts")
             return False
-        self.selenium_cookies = browser.get_cookies()
+        self.selenium_cookies = self.browser.get_cookies()
         for cookie in self.selenium_cookies:
             self.scraper.cookies.set(cookie['name'], cookie['value'])
         self.login_attempts = 0
         self.bot_status = Flag.OK
-        browser.quit()
         return True
 
     def login_cloudscraper(self, usr, pwd):
         if self.login_attempts > 1:
             self.bot_status = Flag.QUIT
             return False
-        print(f"Logging in neopets")
+        self.logger.info(f"Logging in neopets")
         data = {"mfa-check": None, "auth[]": None, "auth[]": None, "auth[]": None, "auth[]": None, "auth[]": None,
                 "auth[]": None, "backup[]": None, "backup[]": None, "backup[]": None, "backup[]": None,
                 "backup[]": None, "backup[]": None, "backup[]": None, "backup[]": None, "dob-check": None,
@@ -144,13 +144,12 @@ class KadWatcher(commands.Bot):
         res = self.scraper.post(url="https://www.neopets.com/login.phtml",
                                 data=data,
                                 headers={"X-Requested-With": "XMLHttpRequest"})
-        print(res.text)
         try:
             json.loads(res.text)
         except JSONDecodeError:
             time.sleep(2)
             self.login_attempts += 1
-            print(f"Couldn't connect to neopets.com after {self.login_attempts} attempts")
+            self.logger.error(f"Couldn't connect to neopets.com after {self.login_attempts} attempts")
             return self.login_cloudscraper(usr, pwd)
         self.login_attempts = 0
         self.bot_status = Flag.OK
@@ -161,10 +160,10 @@ class KadWatcher(commands.Bot):
         try:
             page = self.scraper.get(url=self.kad_url, timeout=36)
         except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError):
-            print(f"Connection error for {self.kad_url}")
+            self.logger.error(f"Connection error for {self.kad_url}")
             return res
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout):
-            print(f"Request timeout for {self.kad_url}")
+            self.logger.error(f"Request timeout for {self.kad_url}")
             return res
 
         # look for kads links (https://www.neopets.com/games/kadoatery/feed_kadoatie.phtml?kad_id=2718691)
@@ -172,7 +171,7 @@ class KadWatcher(commands.Bot):
         kads = soup.find_all("a", {"href": re.compile(r'feed_.*')})
         # if kads aren't found, we've been logged out
         if kads == []:
-            print("Couldn't find any kads")
+            self.logger.info("Couldn't find any kads")
             if not self.login_neopets(self.usr, self.pwd):
                 return False
             else:
@@ -180,7 +179,7 @@ class KadWatcher(commands.Bot):
         # get the largest kad id (all kads ids are incrementally generated). If new high, then a refresh occurred
         latest_kad = max(list(map(lambda x: int(x.get("href").split("=")[-1]), kads)))
         if self.current_kad != 0 and latest_kad > self.current_kad:
-            print("It refreshed!")
+            self.logger.info("It refreshed!")
             res = True
         self.current_kad = latest_kad
         return res
@@ -193,9 +192,9 @@ class KadWatcher(commands.Bot):
     async def check_for_refresh_bot(self):
         tz = timezone('US/Pacific')  # neopets time
         if self.bot_status == Flag.OK:
-            if self.count % 10 == 0:
+            if self.count % 600 == 0:
                 new_time = time.time()
-                print(f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kad}")
+                self.logger.info(f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kad}")
                 self.start_time = new_time
             self.count += 1
             if self.get_new_kad():
@@ -211,19 +210,19 @@ class KadWatcher(commands.Bot):
         count = 0
         while self.bot_status != Flag.QUIT:
             self.login_neopets(self.usr, self.pwd)
-            print("Starting to watch!")
+            self.logger.info("Starting to watch!")
             while self.bot_status == Flag.OK:
                 try:
                     if count % 10 == 0:
                         new_time = time.time()
-                        print(f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kad}")
+                        self.logger.info(f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kad}")
                         self.start_time = new_time
                     count += 1
                     if self.get_new_kad():
-                        print(f"New kad! {self.kad_url}")
-                        #webbrowser.open(self.kad_url, new=2)
+                        self.logger.info(f"New kad! {self.kad_url}")
+                        #webself.browser.open(self.kad_url, new=2)
                 except KeyboardInterrupt:
-                    print("Quitting...")
+                    self.logger.info("Quitting...")
                     self.bot_status = Flag.STOP
 
 
@@ -244,7 +243,7 @@ if __name__ == '__main__':
     if args.token != '' and args.channel != -1:
         print("Running as a discord bot!")
         bot.set_channel(args.channel)
-        bot.run(args.token)
+        bot.run(args.token, log_handler=handler, log_level=logging.INFO)
     else:
         print("Running locally!")
         bot.check_for_refresh_local()
