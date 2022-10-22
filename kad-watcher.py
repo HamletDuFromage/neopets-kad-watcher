@@ -43,7 +43,9 @@ class KadWatcher(commands.Bot):
 
         self.browser = self.create_browser()
         self.login_attempts = 0
-        self.current_kad = 0
+        self.current_kads = set()
+        self.hungry_kads = set()
+        self.kad_link = "https://www.neopets.com/games/kadoatery/feed_kadoatie.phtml?kad_id="
         self.count = 0
         self.start_time = time.time()
         self.bot_status = Flag.OK
@@ -156,15 +158,14 @@ class KadWatcher(commands.Bot):
         return True
 
     def get_new_kad(self):
-        res = False
         try:
             page = self.scraper.get(url=self.kad_url, timeout=36)
         except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError):
             self.logger.error(f"Connection error for {self.kad_url}")
-            return res
+            return False
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout):
             self.logger.error(f"Request timeout for {self.kad_url}")
-            return res
+            return False
 
         # look for kads links (https://www.neopets.com/games/kadoatery/feed_kadoatie.phtml?kad_id=2718691)
         soup = BeautifulSoup(page.content, "html.parser")
@@ -176,13 +177,14 @@ class KadWatcher(commands.Bot):
                 return False
             else:
                 return self.get_new_kad()
-        # get the largest kad id (all kads ids are incrementally generated). If new high, then a refresh occurred
-        latest_kad = max(list(map(lambda x: int(x.get("href").split("=")[-1]), kads)))
-        if self.current_kad != 0 and latest_kad > self.current_kad:
-            self.logger.info("It refreshed!")
-            res = True
-        self.current_kad = latest_kad
-        return res
+        # check if the list of kads differs
+        latest_kads = set(map(lambda x: int(x.get("href").split("=")[-1]), kads))
+        self.hungry_kads = latest_kads - self.current_kads
+        if self.current_kads and self.hungry_kads:
+            self.logger.info(f"It refreshed! ({max(latest_kads)})")
+            self.current_kads = latest_kads
+            return True
+        return False
 
     def login_neopets(self, usr, pwd):
         # return self.login_cloudscraper(usr, pwd)
@@ -192,15 +194,20 @@ class KadWatcher(commands.Bot):
     async def check_for_refresh_bot(self):
         tz = timezone('US/Pacific')  # neopets time
         if self.bot_status == Flag.OK:
-            if self.count % 600 == 0:
-                new_time = time.time()
-                self.logger.info(f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kad}")
-                self.start_time = new_time
-            self.count += 1
             if self.get_new_kad():
                 estimate = datetime.now(tz) + timedelta(minutes=28)
                 channel = self.get_channel(self.channel)  # discord channel ID goes here
-                await channel.send(f"@everyone {self.kad_url}\n\nNext: {estimate.strftime('%I:%M %p')}\nAlternate: {(estimate + timedelta(minutes = 7)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 14)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 21)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 28)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 35)).strftime('%I:%M %p')}")
+                links = ""
+                for kad in self.hungry_kads:
+                    links += f"\n{self.kad_link}{kad}"
+                message = await channel.send(f"@everyone {self.kad_url}\n\nNext: {estimate.strftime('%I:%M %p')}\nAlternate: {(estimate + timedelta(minutes = 7)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 14)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 21)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 28)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 35)).strftime('%I:%M %p')}\n{links}")
+                await message.publish()
+            if self.count % 3600 == 0:
+                new_time = time.time()
+                self.logger.info(f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kads}")
+                self.start_time = new_time
+            self.count += 1
+
 
     @check_for_refresh_bot.before_loop
     async def wait_for_bot(self):
@@ -213,14 +220,14 @@ class KadWatcher(commands.Bot):
             self.logger.info("Starting to watch!")
             while self.bot_status == Flag.OK:
                 try:
-                    if count % 10 == 0:
-                        new_time = time.time()
-                        self.logger.info(f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kad}")
-                        self.start_time = new_time
-                    count += 1
                     if self.get_new_kad():
                         self.logger.info(f"New kad! {self.kad_url}")
-                        #webself.browser.open(self.kad_url, new=2)
+                        # webbrowser.open(self.kad_url, new=2)
+                    if count % 10 == 0:
+                        new_time = time.time()
+                        self.logger.info(f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kads}")
+                        self.start_time = new_time
+                    count += 1
                 except KeyboardInterrupt:
                     self.logger.info("Quitting...")
                     self.bot_status = Flag.STOP
