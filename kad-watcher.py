@@ -178,13 +178,14 @@ class KadWatcher(commands.Bot):
             else:
                 return self.get_new_kad()
         # check if the list of kads differs
+        res = False
         latest_kads = set(map(lambda x: int(x.get("href").split("=")[-1]), kads))
         self.hungry_kads = latest_kads - self.current_kads
         if self.current_kads and self.hungry_kads:
             self.logger.info(f"It refreshed! ({max(latest_kads)})")
-            self.current_kads = latest_kads
-            return True
-        return False
+            res = True
+        self.current_kads = latest_kads
+        return res
 
     def login_neopets(self, usr, pwd):
         # return self.login_cloudscraper(usr, pwd)
@@ -204,7 +205,7 @@ class KadWatcher(commands.Bot):
                 await message.publish()
             if self.count % 3600 == 0:
                 new_time = time.time()
-                self.logger.info(f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kads}")
+                self.logger.info(f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {max(self.current_kads)}")
                 self.start_time = new_time
             self.count += 1
 
@@ -225,7 +226,7 @@ class KadWatcher(commands.Bot):
                         # webbrowser.open(self.kad_url, new=2)
                     if count % 10 == 0:
                         new_time = time.time()
-                        self.logger.info(f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {self.current_kads}")
+                        self.logger.info(f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {max(self.current_kads)}")
                         self.start_time = new_time
                     count += 1
                 except KeyboardInterrupt:
