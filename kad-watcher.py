@@ -45,7 +45,6 @@ class KadWatcher(commands.Bot):
         self.login_attempts = 0
         self.current_kads = set()
         self.hungry_kads = set()
-        self.kad_link = "https://www.neopets.com/games/kadoatery/feed_kadoatie.phtml?kad_id="
         self.count = 0
         self.start_time = time.time()
         self.bot_status = Flag.OK
@@ -196,12 +195,9 @@ class KadWatcher(commands.Bot):
         tz = timezone('US/Pacific')  # neopets time
         if self.bot_status == Flag.OK:
             if self.get_new_kad():
-                estimate = datetime.now(tz) + timedelta(minutes=28)
+                now = datetime.now(tz) + timedelta(minutes=28)
                 channel = self.get_channel(self.channel)  # discord channel ID goes here
-                links = ""
-                for kad in self.hungry_kads:
-                    links += f"\n{self.kad_link}{kad}"
-                message = await channel.send(f"@everyone {self.kad_url}\n\nNext: {estimate.strftime('%I:%M %p')}\nAlternate: {(estimate + timedelta(minutes = 7)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 14)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 21)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 28)).strftime('%I:%M %p')} | {(estimate + timedelta(minutes = 35)).strftime('%I:%M %p')}\n{links}")
+                message = await channel.send(f"@everyone {len(self.hungry_kads)} kads refreshed at {now.strftime('%I:%M %p')}!\n\nNext possible refresh: {(now + timedelta(minutes=28)).strftime('%I:%M %p')}\nOther possible refresh times: {(now + timedelta(minutes = 35)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 42)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 49)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 56)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 63)).strftime('%I:%M %p')}\n{self.kad_url}")
                 await message.publish()
             if self.count % 3600 == 0:
                 new_time = time.time()
