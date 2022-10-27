@@ -195,9 +195,9 @@ class KadWatcher(commands.Bot):
         tz = timezone('US/Pacific')  # neopets time
         if self.bot_status == Flag.OK:
             if self.get_new_kad():
-                now = datetime.now(tz) + timedelta(minutes=28)
+                now = datetime.now(tz)
                 channel = self.get_channel(self.channel)  # discord channel ID goes here
-                message = await channel.send(f"@everyone {len(self.hungry_kads)} kads refreshed at {now.strftime('%I:%M %p')}!\n\nNext possible refresh: {(now + timedelta(minutes=28)).strftime('%I:%M %p')}\nOther possible refresh times: {(now + timedelta(minutes = 35)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 42)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 49)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 56)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 63)).strftime('%I:%M %p')}\n{self.kad_url}")
+                message = await channel.send(f"@everyone {len(self.hungry_kads)} kads refreshed at {now.strftime('%I:%M:%S %p')}!\n\nNext possible refresh: {(now + timedelta(minutes=35)).strftime('%I:%M %p')}\nOther possible refresh times: {(now + timedelta(minutes = 42)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 49)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 56)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 63)).strftime('%I:%M %p')}\n{self.kad_url}")
                 await message.publish()
             if self.count % 3600 == 0:
                 new_time = time.time()
