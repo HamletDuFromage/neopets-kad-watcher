@@ -10,6 +10,7 @@ import re
 import time
 import requests
 import cloudscraper
+from nordvpn_switcher import initialize_VPN, rotate_VPN
 from bs4 import BeautifulSoup
 from pynput import keyboard
 from selenium import webdriver
@@ -26,6 +27,7 @@ COMBINATION = {keyboard.Key.ctrl, keyboard.Key.esc}
 handler = logging.FileHandler(filename='kad-discord.log', encoding='utf-8', mode='w')
 discord.utils.setup_logging(level=logging.INFO, root=False)
 
+
 class Flag:
     OK = 0
     STOP = 1
@@ -33,7 +35,7 @@ class Flag:
 
 
 class KadWatcher(commands.Bot):
-    def __init__(self, usr, pwd):
+    def __init__(self, usr, pwd, nordvpn = None):
         intents = discord.Intents.default()
         super().__init__(intents=intents, command_prefix='?')
         self.usr = usr
@@ -52,6 +54,21 @@ class KadWatcher(commands.Bot):
         keyboard.Listener(on_press=self.on_press, on_release=self.on_release).start()
         self.add_command(self.set_status)
         self.logger = logging.getLogger("discord")
+
+        self.nord_vpn_instructions = None
+        if (nordvpn):
+            nord_credentials = nordvpn.split(":")
+            self.nord_vpn_instructions = {
+                "opsys": "Linux",
+                "original_ip": "127.0.0.1",
+                "command": ["nordvpn", "c"],
+                "settings": ["United_States", "Canada", "Brazil", "Argentina", "Mexico", "Chile", "Costa_Rica", "Australia"],
+                "additional_settings": [["nordvpn", "whitelist", "add", "port", "22"]],
+                "credentials": [[nord_credentials[0]],
+                                [nord_credentials[1]]]
+            }
+
+            rotate_VPN(self.nord_vpn_instructions)
 
     @commands.command()
     async def set_status(self, ctx, status='stop'):
@@ -116,6 +133,8 @@ class KadWatcher(commands.Bot):
             self.logger.error(f"Couldn't connect to neopets.com {type(ex).__name__}, try {self.login_attempts}")
             self.login_attempts += 1
             if self.login_attempts < 10:
+                if self.nord_vpn_instructions:
+                    rotate_VPN(self.nord_vpn_instructions)
                 return self.login_selenium(usr, pwd)
             else:
                 self.bot_status = Flag.QUIT
@@ -199,12 +218,12 @@ class KadWatcher(commands.Bot):
                 channel = self.get_channel(self.channel)  # discord channel ID goes here
                 message = await channel.send(f"@everyone {len(self.hungry_kads)} kads refreshed at {now.strftime('%I:%M:%S %p')}!\n\nNext possible refresh: {(now + timedelta(minutes=35)).strftime('%I:%M %p')}\nOther possible refresh times: {(now + timedelta(minutes = 42)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 49)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 56)).strftime('%I:%M %p')} | {(now + timedelta(minutes = 63)).strftime('%I:%M %p')}\n{self.kad_url}")
                 await message.publish()
-            if self.count % 3600 == 0:
+            if self.count % 3600 == 0 and self.current_kads:
                 new_time = time.time()
-                self.logger.info(f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {max(self.current_kads)}")
+                self.logger.info(
+                    f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {max(self.current_kads)}")
                 self.start_time = new_time
             self.count += 1
-
 
     @check_for_refresh_bot.before_loop
     async def wait_for_bot(self):
@@ -220,9 +239,10 @@ class KadWatcher(commands.Bot):
                     if self.get_new_kad():
                         self.logger.info(f"New kad! {self.kad_url}")
                         # webbrowser.open(self.kad_url, new=2)
-                    if count % 10 == 0:
+                    if count % 10 == 0 and self.current_kads:
                         new_time = time.time()
-                        self.logger.info(f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {max(self.current_kads)}")
+                        self.logger.info(
+                            f"count: {count} | time: {new_time - self.start_time:.2f}s | last: {max(self.current_kads)}")
                         self.start_time = new_time
                     count += 1
                 except KeyboardInterrupt:
@@ -239,10 +259,12 @@ if __name__ == '__main__':
     optional.add_argument('-t', '--token', help='Discord token (if run as a bot)', required=False, default='')
     optional.add_argument('-c', '--channel', type=int,
                           help='Discord channel (if run as a bot)', required=False, default=-1)
+    optional.add_argument('-n', '--nordvpn', help='NordVPN login "username:password', required=False, default='')
+
     args = parser.parse_args()
 
     print(f"Press {COMBINATION} to stop the bot")
-    bot = KadWatcher(args.username, args.password)
+    bot = KadWatcher(args.username, args.password, args.nordvpn)
 
     if args.token != '' and args.channel != -1:
         print("Running as a discord bot!")
