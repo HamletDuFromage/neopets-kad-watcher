@@ -35,7 +35,7 @@ class Flag:
 
 
 class KadWatcher(commands.Bot):
-    def __init__(self, usr, pwd, nordvpn = None):
+    def __init__(self, usr, pwd, nordvpn=None):
         intents = discord.Intents.default()
         super().__init__(intents=intents, command_prefix='?')
         self.usr = usr
@@ -99,17 +99,17 @@ class KadWatcher(commands.Bot):
 
     def create_browser(self):
         try:
-            options = webdriver.ChromeOptions()
-            options.add_argument('--headless')
-            options.add_argument('--window-size=1366,768')
-            return webdriver.Chrome(options=options)
-        except WebDriverException:
             options = webdriver.FirefoxOptions()
             options.set_preference('permissions.default.stylesheet', 2)
             options.set_preference('permissions.default.image', 2)
             options.add_argument('--headless')
             options.add_argument('--window-size=1366,768')
             return webdriver.Firefox(options=options)
+        except WebDriverException:
+            options = webdriver.ChromeOptions()
+            options.add_argument('--headless')
+            options.add_argument('--window-size=1366,768')
+            return webdriver.Chrome(options=options)
 
     def set_channel(self, channel):
         self.channel = channel
