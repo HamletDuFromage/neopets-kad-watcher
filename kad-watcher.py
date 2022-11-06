@@ -223,6 +223,8 @@ class KadWatcher(commands.Bot):
                 self.logger.info(
                     f"count: {self.count} | time: {new_time - self.start_time:.2f}s | last: {max(self.current_kads)}")
                 self.start_time = new_time
+            if self.bot_status == Flag.QUIT:
+                message = await channel.send(f"@maintainers The bot stopped.\nLogin attempts: {self.login_attempts}")
             self.count += 1
 
     @check_for_refresh_bot.before_loop
