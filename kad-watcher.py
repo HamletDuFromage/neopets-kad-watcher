@@ -129,7 +129,7 @@ class KadWatcher(commands.Bot):
             self.browser.find_element(by=By.ID, value="loginUsername").send_keys(usr)
             self.browser.find_element(by=By.ID, value="loginPassword").send_keys(pwd)
             self.browser.find_element(by=By.ID, value="loginButton").click()
-        except NoSuchElementException as ex:
+        except WebDriverException as ex:
             self.logger.error(f"Couldn't connect to neopets.com {type(ex).__name__}, try {self.login_attempts}")
             self.login_attempts += 1
             if self.login_attempts < 10:
